@@ -12,6 +12,7 @@ app.use(express.json());
 
 const verifyJWT = (req, res, next) => {
     const authorization = req.headers.authorization;
+    // console.log("from verify jwt", authorization);
     if (!authorization) {
         return res.status(401).send({ error: true, message: "unauthorized access" })
     }
@@ -49,6 +50,7 @@ async function run() {
         const reviewCollection = client.db("bistroDB").collection("reviews");
         const cartCollection = client.db("bistroDB").collection("cart");
 
+
         // jwt token
 
         app.post("/jwt", (req, res) => {
@@ -57,23 +59,51 @@ async function run() {
             res.send({ token })
         })
 
+        // Warning: use verifyJWT before using verifyAdmin
+        const verifyAdmin = async (req, res, next) => {
+            const email = req.decoded.email;
+            const query = { email: email }
+            const user = await usersCollection.findOne(query);
+            if (user?.role !== 'admin') {
+                return res.status(403).send({ error: true, message: 'forbidden message' })
+            }
+            next()
+        }
+
         // users related apis
 
-        app.get("/users", async (req, res) => {
+        app.get("/users", verifyJWT, verifyAdmin, async (req, res) => {
             const result = await usersCollection.find().toArray();
             res.send(result)
         })
 
         app.post("/users", async (req, res) => {
             const user = req.body;
-            console.log(user);
-            const query = { name: user.displayName, email: user.email }
+            // console.log(user);
+            const query = { email: user.email }
             const existingUser = await usersCollection.findOne(query)
-            console.log("existingUser", existingUser);
+            // console.log("existingUser", existingUser);
             if (existingUser) {
                 return res.send({ message: "User already exist" })
             }
             const result = await usersCollection.insertOne(user);
+            res.send(result)
+        })
+
+        // security layer: verifyJWT
+        // email same
+        // check admin
+        app.get("/users/admin/:email", verifyJWT, async (req, res) => {
+            const email = req.params.email;
+            console.log('user-email', email);
+
+            if (req.decoded.email !== email) {
+                res.send({ admin: false })
+            }
+
+            const query = { email: email }
+            const user = await usersCollection.findOne(query)
+            const result = { admin: user?.role === 'admin' }
             res.send(result)
         })
 
@@ -92,8 +122,15 @@ async function run() {
 
         // menu related apis
 
-        app.get("/allMenu", async (req, res) => {
+        app.get("/menu", async (req, res) => {
             const result = await menuCollection.find().toArray();
+            res.send(result)
+        })
+
+        app.post("/menu", verifyJWT, verifyAdmin, async (req, res) => {
+            const newItem = req.body;
+            console.log('item', newItem);
+            const result = await menuCollection.insertOne(newItem)
             res.send(result)
         })
 
@@ -108,12 +145,13 @@ async function run() {
 
         app.get("/cart", verifyJWT, async (req, res) => {
             const email = req.query?.email;
+            // console.log(email);
             if (!email) {
-                res.send([])
+                return res.send([])
             }
             const decodedEmail = req.decoded.email;
             if (email !== decodedEmail) {
-                res.status(401).send({ error: true, message: "forbidden access" })
+                return res.status(401).send({ error: true, message: "forbidden access" })
             }
             const query = { email: email }
             const result = await cartCollection.find(query).toArray();
@@ -122,8 +160,9 @@ async function run() {
 
         app.post("/cart", async (req, res) => {
             const body = req.body;
-            // console.log(body);
+            console.log(body);
             const result = await cartCollection.insertOne(body);
+            console.log(result);
             res.send(result)
         })
 
