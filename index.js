@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 require('dotenv').config()
+const stripe = require('stripe')(process.env.PAYMENT_SECRET_KEY)
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const app = express();
 const port = process.env.PORT || 5000;
@@ -49,6 +50,7 @@ async function run() {
         const usersCollection = client.db("bistroDB").collection("users");
         const reviewCollection = client.db("bistroDB").collection("reviews");
         const cartCollection = client.db("bistroDB").collection("cart");
+        const paymentCollection = client.db("bistroDB").collection("payments");
 
 
         // jwt token
@@ -95,7 +97,7 @@ async function run() {
         // check admin
         app.get("/users/admin/:email", verifyJWT, async (req, res) => {
             const email = req.params.email;
-            console.log('user-email', email);
+            // console.log('user-email', email);
 
             if (req.decoded.email !== email) {
                 res.send({ admin: false })
@@ -129,8 +131,15 @@ async function run() {
 
         app.post("/menu", verifyJWT, verifyAdmin, async (req, res) => {
             const newItem = req.body;
-            console.log('item', newItem);
+            // console.log('item', newItem);
             const result = await menuCollection.insertOne(newItem)
+            res.send(result)
+        })
+
+        app.delete("/menu/:id", async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) }
+            const result = await menuCollection.deleteOne(query);
             res.send(result)
         })
 
@@ -170,6 +179,29 @@ async function run() {
             const id = req.params.id;
             const query = { _id: new ObjectId(id) };
             const result = await cartCollection.deleteOne(query);
+            res.send(result)
+        })
+
+        // create payment intent
+        app.post("/create-payment-intent", verifyJWT, async (req, res) => {
+            const { price } = req.body;
+            const amount = price * 100;
+            const paymentIntent = await stripe.paymentIntents.create({
+                amount: amount,
+                currency: 'usd',
+                payment_method_types: [
+                    'card'
+                ]
+            })
+            res.send({
+                clientSecret: paymentIntent.client_secret,
+            })
+        })
+
+        // payment related apis
+        app.post("/payments", verifyJWT, async (req, res) => {
+            const payment = req.body;
+            const result = await paymentCollection.insertOne(payment);
             res.send(result)
         })
 
